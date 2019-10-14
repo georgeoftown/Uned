@@ -1,0 +1,1457 @@
+package compiler.syntax;
+
+import java_cup.runtime.Symbol;
+import java.util.*;
+
+import es.uned.lsi.compiler.lexical.*;
+import es.uned.lsi.compiler.code.*;
+import es.uned.lsi.compiler.intermediate.*;
+import es.uned.lsi.compiler.semantic.*;
+import es.uned.lsi.compiler.semantic.symbol.*;
+import es.uned.lsi.compiler.semantic.type.*;
+import es.uned.lsi.compiler.syntax.*;
+
+import compiler.CompilerContext;
+import compiler.lexical.*;
+import compiler.syntax.nonTerminal.*;
+import compiler.semantic.*;
+import compiler.semantic.symbol.*;
+import compiler.semantic.type.*;
+import compiler.intermediate.*;
+import compiler.code.*;
+
+// Declaración del código de usuario
+
+action code   {:
+	
+	SyntaxErrorManager   syntaxErrorManager   = CompilerContext.getSyntaxErrorManager();
+	SemanticErrorManager semanticErrorManager = CompilerContext.getSemanticErrorManager();
+	ScopeManagerIF       scopeManager         = CompilerContext.getScopeManager();
+	FinalCodeFactoryIF   finalCodeFactory     = CompilerContext.getFinalCodeFactory();
+
+	public ScopeIF openScope(String scopeName) {
+	    ScopeIF scope = scopeManager.openScope(scopeName);
+      semanticErrorManager.semanticInfo("Opened " + scope);
+      return scope;
+	}
+
+    public ScopeIF getCurrentScope() {
+      return scopeManager.getCurrentScope();
+    }
+
+	public void closeCurrentScope() {
+	      ScopeIF scope = scopeManager.getCurrentScope();
+        if(scope!=null){
+          scopeManager.closeScope();
+        }
+        semanticErrorManager.semanticInfo("Close " + scope);
+	}
+
+	public void checkSymbolDoesNotExists(String identifier){
+		ScopeIF scope = scopeManager.getCurrentScope();
+		SymbolTableIF symbolTable = scope.getSymbolTable();
+	    if(symbolTable.containsSymbol(identifier)){
+            semanticErrorManager.semanticFatalError("Identificador "+ identifier +" ya utilizado");
+		}
+	}
+
+	public void checkSymbolExists(String identifier){
+	      ScopeIF scope = scopeManager.getCurrentScope();
+    		SymbolTableIF symbolTable = scope.getSymbolTable();
+    	    if(!symbolTable.containsSymbol(identifier)){
+                semanticErrorManager.semanticFatalError("Identificador " + identifier + " no existente");
+    		}
+	}
+
+	public void checkSymbolType(String identifier, Class symbolToCompare){
+    	        ScopeIF scope = scopeManager.getCurrentScope();
+        		  SymbolTableIF symbolsTable = scope.getSymbolTable();
+        	    SymbolIF symbol = symbolsTable.getSymbol(identifier);
+        	    if(!symbol.getClass().equals(symbolToCompare)){
+        	       semanticErrorManager.semanticFatalError("Tipo de simbolo no esperado");
+        	    }
+  }
+
+  public ScopeIF searchScope(String scopeIdentifier) {
+    List<ScopeIF> scopes = scopeManager.getAllScopes();
+    for(ScopeIF scope : scopes){
+      if(scope.getName().toLowerCase().equals(scopeIdentifier)) {
+        return scope;
+      }
+    }
+    return null;
+  }
+
+	public void checkTypeDoesNotExists(String identifier){
+	    ScopeIF scope = scopeManager.getCurrentScope();
+        TypeTableIF typeTable = scope.getTypeTable();
+        if(typeTable.containsType(identifier)){
+            semanticErrorManager.semanticFatalError("Tipo ya utilizado");
+        }
+
+        while(scope.getParentScope() != null){
+           ScopeIF parentScope = scope.getParentScope();
+           TypeTableIF parentTypeTable = parentScope.getTypeTable();
+           if(typeTable.containsType(identifier)){
+             semanticErrorManager.semanticFatalError("Tipo ya utilizado");
+           }
+        }
+	}
+
+    public TypeIF getType(String identifier) {
+        	      List<ScopeIF> scopes = scopeManager.getAllScopes();
+                for(ScopeIF scope : scopes){
+                  TypeTableIF typeTable = scope.getTypeTable();
+                  TypeIF type = typeTable.getType(identifier);
+                  if (type==null) {
+                      while(scope.getParentScope() != null){
+                            scope = scope.getParentScope();
+                            typeTable = scope.getTypeTable();
+                            type = typeTable.getType(identifier);
+                            if(type == null){
+                              semanticErrorManager.semanticFatalError("Tipo no encontrado");
+                            }
+                      }
+                  }
+                  return type;
+                }
+                return null;
+    }
+
+    public void checkTypesAreSame(TypeIF typeLeft, TypeIF typeRigth){
+        if(typeLeft.getName() != typeRigth.getName()) {
+            semanticErrorManager.semanticFatalError("Los tipos no corresponden al esperado");
+        }
+    }
+
+	public void addSymbol(String identifier, SymbolIF symbol){
+	    ScopeIF scope = scopeManager.getCurrentScope();
+        SymbolTableIF symbolTable = scope.getSymbolTable();
+        symbolTable.addSymbol(identifier, symbol);
+	}
+
+	public void addType(String identifier, TypeIF type){
+	    ScopeIF scope = scopeManager.getCurrentScope();
+        TypeTableIF typeTable = scope.getTypeTable();
+        typeTable.addType(identifier, type);
+	}
+
+	public SymbolIF getSymbol(String identificador){
+	   ScopeIF scope = scopeManager.getCurrentScope();
+       SymbolTableIF symbolTable = scope.getSymbolTable();
+       return symbolTable.getSymbol(identificador);
+	}
+
+	public TypeIF getExpresionTypeResult(Expresion expresion) {
+
+		TypeTableIF typeTable = getCurrentScope().getTypeTable();
+
+		if (expresion.getExpArit() != null) {
+			return typeTable.getType("int");
+		}
+
+		if (expresion.getExprLogica() != null) {
+			return typeTable.getType("boolean");
+		}
+
+		if (expresion.getVariables() != null) {
+
+			if (expresion.getVariables().getParFuncion()!= null && expresion.getVariables().getParFuncion().getParametros() !=null && expresion.getVariables().getParFuncion().getParametros().getExpresionList().size() > 0) {
+				return getExpresionTypeResult(expresion.getVariables().getParFuncion().getParametros().getExpresionList().get(0));
+			}
+
+			if (expresion.getVariables().getIdArray() != null) {
+				return getExpresionTypeResult(expresion.getVariables().getIdArray().getExpresion());
+			}
+
+			if (expresion.getVariables().getIdentificador() != null) {
+				SymbolTableIF symbolTableIF = getCurrentScope().getSymbolTable();
+				return symbolTableIF.getSymbol(expresion.getVariables().getIdentificador()).getType();
+			}
+		}
+
+		return getExpresionTypeResult(expresion.getExpresionList().get(0));
+	}
+:}
+
+parser code {:
+:}
+
+//
+// Declaración de terminales
+
+//
+terminal Token IDENTIFICADOR;
+terminal Token INTEGER, BOOLEAN, STRING;
+terminal Token ARRAY, OF;
+terminal Token MODULE, BEGIN, END, PROCEDURE, RETURN;
+terminal Token OR, NOT;
+terminal Token CONST, TYPE, VAR;
+terminal Token IF, ELSE, THEN, DO, FOR, TO;
+terminal Token WRITESTRING, WRITEINT, WRITELN;
+
+terminal Token PARENIZQ, PARENDER, CORCHIZQ, CORCHDER;
+terminal Token PUNTOPUNTO, COMA, PUNTOYCOMA, DOSPUNTOS, IGUAL;
+terminal Token MINUS, PRODUCTO, MAYOR;
+terminal Token DOSPUNTOSIGUAL;
+
+terminal Token ENTERO;
+terminal Token TRUE, FALSE;
+
+//
+// Declaración de no terminales
+//
+non terminal                     program;
+non terminal   Axiom		         axiom;
+
+non terminal   CabModule         cabModule;
+non terminal   Cuerpo            cuerpo;
+
+non terminal   StmConstantes     stmConstantes;
+non terminal   StmTipos          stmTipos;
+non terminal   StmVar            stmVar;
+non terminal   StmSubprogram     stmSubprogram;
+
+non terminal   SentConst         sentConst;
+non terminal   ExpConst          expConst;
+non terminal   ValorConst        valorConst;
+
+non terminal   SentTipo          sentTipo;
+non terminal   ExpTipo           expTipo;
+
+non terminal   SentVar           sentVar;
+non terminal   ExpVar            expVar;
+non terminal   CadIdVar          cadIdVar;
+non terminal   TipoVar           tipoVar;
+
+non terminal   CabProcedure      cabProcedure;
+non terminal   TipoRetorno       tipoRetorno;
+non terminal   ProcParenParam    procParenParam;
+non terminal   ProcListParam     procListParam;
+non terminal   ProcParam         procParam;
+
+non terminal   Sentencias        sentencias;
+non terminal   ListSentencia     listSentencia;
+non terminal   Sentencia         sentencia;
+
+non terminal   Expresion         expresion;
+non terminal   ExpArit           exprArit;
+non terminal   ExprLogica        exprLogica;
+non terminal   Variables         variables;
+
+non terminal   SentProcedure     sentProcedure;
+non terminal   ParFuncion        parFuncion;
+non terminal   Parametros        parametros;
+
+non terminal   SentAsign         sentAsign;
+non terminal   SentReturn        sentReturn;
+non terminal   SentIf            sentIf;
+non terminal   SentElse          sentElse;
+non terminal   SentFor           sentFor;
+
+non terminal   SWriteString      sWriteString;
+non terminal   SWriteInt         sWriteInt;
+non terminal   SWriteLn          sWriteLn;
+
+non terminal   IdArray           idArray;
+non terminal   IntOBool          intOBool;
+non terminal   EntOId            entOid;
+non terminal   VBooleano         vBooleano;
+
+precedence nonassoc MAYOR, IGUAL;
+precedence left     MINUS, OR;
+precedence left     PRODUCTO;
+precedence right    NOT;
+
+precedence left     PARENIZQ, PARENDER, CORCHIZQ, CORCHDER;
+
+start with program;
+
+program ::=
+  {:
+      syntaxErrorManager.syntaxInfo("Starting parsing...");
+  :}
+
+axiom:ax
+  {:
+			int globalAddress = 0;
+      int globalOffset = 0;
+      ScopeIF currentScope = null;
+		  Map<String, SymbolProcedure> procedures = new HashMap<String, SymbolProcedure>();
+
+			for (ScopeIF scope : scopeManager.getAllScopes()) {
+        
+        int scopeOffset = 0;
+        int functionOffset = 1;
+        boolean scopeGlobal = false;
+
+        for(SymbolIF symbol : scope.getSymbolTable().getSymbols()) {
+            if(symbol instanceof SymbolVariable) {
+               SymbolVariable variableSymbol = (SymbolVariable)symbol;
+               if (scope.getLevel() == 0) {
+                variableSymbol.setAddress(globalAddress);
+                globalAddress += variableSymbol.getType().getSize();
+            } else {						
+                variableSymbol.setAddress(functionOffset); // Ademas de la dir de retorno se reserva espacio para el estado y el enlace de control
+                functionOffset += variableSymbol.getType().getSize();
+                SymbolProcedure function = (SymbolProcedure) procedures.get(variableSymbol.getScope().getName());
+                function.incrementSize(variableSymbol.getType().getSize());
+                function.incrementTempSize(variableSymbol.getType().getSize());
+                variableSymbol.setEnclosingSymbol(function);
+              }
+           } else if (symbol instanceof SymbolFunction) {
+            procedures.put(symbol.getName(), (SymbolFunction)symbol);
+          } else if (symbol instanceof SymbolProcedure) {
+            procedures.put(symbol.getName(), (SymbolProcedure)symbol);
+          } else if (symbol instanceof SymbolParameter) {
+            SymbolParameter parametro = (SymbolParameter)symbol;
+            parametro.setAddress(scopeOffset);
+            scopeOffset += parametro.getType().getSize();
+            SymbolProcedure function = (SymbolProcedure)procedures.get(parametro.getScope().getName());
+            function.incrementSize(parametro.getType().getSize());
+            parametro.setEnclosingSymbol(function);
+          }
+
+        }
+
+        List<TemporalIF> temporalesAmbito = scope.getTemporalTable().getTemporals();
+          for (TemporalIF t:temporalesAmbito) {
+            if (scope.getLevel() == 0) {
+              t.setAddress(scopeOffset);
+              scopeOffset++;
+            } else {
+              t.setAddress(functionOffset);
+              SymbolProcedure function = (SymbolProcedure)procedures.get(t.getScope().getName());
+              function.incrementSize();
+              ((Temporal)t).setEnclosingSymbol(function);
+              function.incrementTempSize();
+              functionOffset++;
+            }
+          }
+
+          if (scope.getLevel() == 0) {
+            currentScope = scope;
+            globalOffset = scopeOffset;
+          }
+			}
+
+
+        IntermediateCodeBuilder cb = new IntermediateCodeBuilder(currentScope);
+		    LabelFactoryIF labelFactory = new LabelFactory ();
+
+        cb.addQuadruple("DATA", null, globalAddress + globalOffset, globalAddress);		
+	    	cb.addQuadruple("BR", ax.getLabel());
+        cb.addQuadruples(ax.getIntermediateCode());
+	    	cb.addQuadruple("HALT");
+
+        finalCodeFactory.setEnvironment(new ExecutionEnvironmentEns2001()); 
+        finalCodeFactory.create(cb.create());               
+        
+        syntaxErrorManager.syntaxInfo ("Codigo intermedio generado; \n  ");
+        for (QuadrupleIF q:cb.create()) {
+          syntaxErrorManager.syntaxInfo (q.toString());
+        }
+        syntaxErrorManager.syntaxInfo ("Parsing process ended.");
+   :};
+
+
+axiom ::= cabModule:cabModule
+          cuerpo:cuerpo
+          {:
+              Axiom axiom =  new AxiomImpl(cabModule, cuerpo);
+              LabelFactoryIF labelFactory = new LabelFactory ();
+              LabelIF label = labelFactory.create(cabModule.getIdentifier());
+              
+              axiom.setLabel(label);
+
+              TypeIF type = scopeManager.searchType(cabModule.getIdentifier());
+              if(getCurrentScope().getLevel()!=0){
+                for (SymbolIF symbol : getCurrentScope().getSymbolTable().getSymbols()) {
+                  ((TypeProcedure) type).incSize(symbol.getType().getSize());
+                }
+              }
+
+              ((TypeProcedure) type).incSize(getCurrentScope().getTemporalTable().getTemporals().size());
+
+              //Código intermedio
+              boolean labelAdded = false;
+              TemporalFactoryIF tf = new TemporalFactory(getCurrentScope());
+              IntermediateCodeBuilderIF cb = new IntermediateCodeBuilder(getCurrentScope());
+              LabelIF labelFin = labelFactory.create("F_MAIN");
+
+              for (Sentencia procedure : cuerpo.getSentencias().getListSentencia().getSentenciaList()) {
+                if(!labelAdded){
+                    cb.addQuadruple("INL", label, 0);
+                    labelAdded = true;
+                } 
+                cb.addQuadruples(procedure.getIntermediateCode());
+              }
+              cb.addQuadruple("BR", labelFin);
+              cb.addQuadruples(cuerpo.getStmSubprogram().getIntermediateCode());
+              cb.addQuadruple("INL", labelFin, 0);
+              axiom.getIntermediateCode().addAll(cb.create());
+              closeCurrentScope();
+              RESULT = axiom;
+          :};
+
+cabModule     ::= MODULE IDENTIFICADOR:identificador PUNTOYCOMA
+                  {:
+                   ScopeIF mainScope = openScope(identificador.getLexema());
+                   addType("boolean", new TypeSimple(getCurrentScope(), "boolean"));
+                   addType("int", new TypeSimple(getCurrentScope(), "int"));
+                   addType(identificador.getLexema(), new TypeProcedure(mainScope, identificador.getLexema()));
+                   RESULT = new CabModule(identificador.getLexema());
+                  :};
+
+cuerpo        ::= stmConstantes:stmConstantes stmTipos:stmTipos stmVar:stmVar stmSubprogram:stmSubprogram BEGIN sentencias:sentencias END IDENTIFICADOR PUNTOYCOMA
+                {:
+                   Cuerpo cuerpo = new Cuerpo(stmConstantes, stmTipos, stmVar, stmSubprogram, sentencias);
+                   //Código intermedio
+                   TemporalFactoryIF tf = new TemporalFactory(getCurrentScope());
+                  
+                   IntermediateCodeBuilderIF cb = new IntermediateCodeBuilder(getCurrentScope());
+                   cb.addQuadruples(stmSubprogram.getIntermediateCode());
+                   cb.addQuadruples(sentencias.getIntermediateCode());
+                   cuerpo.setIntermediateCode(cb.create());
+                   if (getCurrentScope().getLevel()!=0){
+                     closeCurrentScope();
+                   }
+                   RESULT = cuerpo;
+                :};
+
+stmConstantes ::= CONST sentConst:sentConst
+                  {:
+                   RESULT = new StmConstantes(sentConst);
+                  :}
+                |
+                  {:
+                   RESULT = new StmConstantes();
+                  :};
+
+sentConst     ::= sentConst:sentConst expConst:expConst
+                  {:
+                    sentConst.addExpConst(expConst);
+                    RESULT = sentConst;
+                  :}
+                |   expConst:expConst
+                  {:
+                     RESULT = new SentConst(expConst);
+                  :};
+
+expConst      ::= IDENTIFICADOR:identificador IGUAL valorConst:valorConst PUNTOYCOMA
+                  {:
+                   String expConstIdentificador = identificador.getLexema();
+                   checkSymbolDoesNotExists(expConstIdentificador);
+                   SymbolConstant symbolConstant;
+                   if(valorConst.isBoolean()) {
+                      symbolConstant = new SymbolConstant(getCurrentScope(), expConstIdentificador, valorConst.getBoolean(), getType("boolean"));
+                   } else {
+                      symbolConstant = new SymbolConstant(getCurrentScope(), expConstIdentificador, valorConst.getValue(), getType("int"));
+                   }
+                   addSymbol(expConstIdentificador, symbolConstant);
+                   ExpConst expConst = new ExpConst(expConstIdentificador, valorConst);
+                   RESULT = expConst;
+                  :};
+
+valorConst    ::= ENTERO:valor
+                  {:
+                   ValorConst valorConst = new ValorConst(Integer.parseInt(valor.getLexema()));
+                   RESULT = valorConst;
+                  :}
+                | vBooleano:vBooleano
+                  {:
+                   ValorConst valorConst = new ValorConst(vBooleano.getValue());
+                   RESULT = valorConst;
+                  :};
+
+stmTipos      ::= TYPE sentTipo:sentTipo
+                {:
+                  RESULT = new StmTipos(sentTipo);
+                :}
+                |
+                {:
+                    RESULT = new StmTipos();
+                :};
+
+sentTipo      ::= sentTipo:sentTipo expTipo:expTipo
+                {:
+                    sentTipo.addExpTipo(expTipo);
+                    RESULT = sentTipo;
+                :}
+                | expTipo:expTipo {:
+                    RESULT = new SentTipo(expTipo);
+                 :};
+
+expTipo       ::= IDENTIFICADOR:identificador IGUAL ARRAY CORCHIZQ entOid:endOidI PUNTOPUNTO entOid:endOidd CORCHDER OF intOBool:intOBool PUNTOYCOMA
+                    {:
+
+                      if(endOidI.getValue()!=null && endOidd.getValue()!=null && endOidI.getValue()>=endOidd.getValue()){
+                           semanticErrorManager.semanticFatalError("Rango de array erroneo");
+                      }
+
+                       checkTypeDoesNotExists(identificador.getLexema());
+                       ExpTipo expTipo = new ExpTipo(identificador.getLexema(), endOidI, endOidd, intOBool);
+                       TypeIF type = new TypeArray(getCurrentScope(), identificador.getLexema(), expTipo);
+                       addType(identificador.getLexema(), type);
+                       RESULT = expTipo;
+                    :};
+
+stmVar        ::= VAR sentVar:sentVar
+                  {:
+                    RESULT = new StmVar(sentVar);
+                  :}
+                |
+                  {:
+                    RESULT = new StmVar();
+                  :};
+
+sentVar       ::= sentVar:sentVar expVar:expVar
+                  {:
+                     sentVar.addExpVar(expVar);
+                     RESULT = sentVar;
+                  :}
+                  | expVar:expVar
+                  {:
+                    RESULT = new SentVar(expVar);
+                  :};
+
+expVar        ::= cadIdVar:cadIdVar DOSPUNTOS tipoVar:tipoVar PUNTOYCOMA
+                  {:
+                    for(String identificadorVariable : cadIdVar.getIdentificadores()) {
+                        checkSymbolDoesNotExists(identificadorVariable);
+                        SymbolIF symbolVariable = new SymbolVariable(getCurrentScope(), identificadorVariable, getType(tipoVar.getIdentificadorTipo()));
+                        addSymbol(identificadorVariable, symbolVariable);
+                    }
+                   RESULT = new ExpVar(cadIdVar, tipoVar);
+                  :};
+
+cadIdVar      ::= IDENTIFICADOR:identificador COMA cadIdVar:cadIdVar
+                 {:
+                  cadIdVar.addIdentificador(identificador.getLexema());
+                  RESULT = cadIdVar;
+                 :}
+                | IDENTIFICADOR:identificador
+                {:
+                  RESULT =  new CadIdVar(identificador.getLexema());
+                :};
+
+tipoVar       ::= intOBool:intOBool
+                  {:
+                    RESULT = new TipoVar(intOBool);
+                  :}
+                | IDENTIFICADOR:identificador
+                  {:
+                    RESULT = new TipoVar(identificador.getLexema());
+                  :};
+
+stmSubprogram  ::= cabProcedure:cabProcedure
+                   cuerpo:cuerpo
+                   stmSubprogram:stmSubprogram
+                {:
+                  stmSubprogram.addCuerpoAndProcedure(cuerpo, cabProcedure);
+                  RESULT = stmSubprogram;
+                :}
+                |
+                {:
+                   RESULT = new StmSubprogram();
+                :};
+                
+cabProcedure   ::= PROCEDURE IDENTIFICADOR:identificador procParenParam:procParenParam tipoRetorno:tipoRetorno PUNTOYCOMA
+                  {:
+                       checkSymbolDoesNotExists(identificador.getLexema());
+                       addType(identificador.getLexema(), new TypeProcedure(getCurrentScope(), identificador.getLexema()));
+                       SymbolIF symbol  = null;
+                       RESULT = new CabProcedure(getCurrentScope(), identificador.getLexema(), procParenParam, tipoRetorno);
+                       if(tipoRetorno.getIntOBool() != null) {//Is function
+                            symbol = new SymbolFunction(getCurrentScope(), identificador.getLexema(),
+                            RESULT, new TypeFunction(getCurrentScope()));
+                       } else { //Is procedure
+                            symbol = new SymbolProcedure(getCurrentScope(), identificador.getLexema(),
+                            RESULT, new TypeProcedure(getCurrentScope()));
+                       }
+                       
+                       addSymbol(identificador.getLexema(), symbol);
+
+                       ScopeIF procedureScope = openScope(identificador.getLexema());
+
+                          for(ProcParam procParam : procParenParam.getProcParams()){
+                            if(procParam.getCadIdVar()!=null){
+                              for(String identificadorParam : procParam.getCadIdVar().getIdentificadores()){
+                                if(scopeManager.searchSymbol(identificadorParam)==null) {
+                                  TypeIF type = scopeManager.searchType(procParam.getTipoVar().getIdentificadorTipo());
+                                  SymbolParameter symbolParameter = new SymbolParameter(procedureScope, identificadorParam, type);
+                                  procedureScope.getSymbolTable().addSymbol(symbolParameter);
+                                }
+                              }
+                            }
+                          }
+                  :};
+
+procParenParam ::= PARENIZQ procListParam:procListParam PARENDER
+                {:
+                 RESULT = new ProcParenParam(procListParam);
+                :}
+                |
+                {:
+                 RESULT = new ProcParenParam();
+                :};
+
+procListParam  ::= procParam:procParam PUNTOYCOMA procListParam:procListParam
+                {:
+                 procListParam.addProcParam(procParam);
+                 RESULT = procListParam;
+                :}
+                |  procParam:procParam 
+                {:
+                 RESULT = new ProcListParam(procParam);
+                :}
+                |
+                {:
+                    RESULT = new ProcListParam();
+                :};
+
+procParam      ::= cadIdVar:cadIdVar DOSPUNTOS tipoVar:tipoVar
+                {:
+                  RESULT = new ProcParam(cadIdVar, tipoVar);
+                :};
+
+tipoRetorno    ::= DOSPUNTOS intOBool:intOBool
+                  {:
+                    RESULT = new TipoRetorno(intOBool);
+                  :}
+                |
+                 {:
+                   RESULT = new TipoRetorno();
+                 :};
+
+expresion      ::= exprArit:exprArit
+                {:
+                  Expresion expresion = new Expresion(exprArit);
+                
+                  //Código intermedio
+                  TemporalFactoryIF tf = new TemporalFactory(getCurrentScope());
+                  IntermediateCodeBuilderIF cb = new IntermediateCodeBuilder(getCurrentScope());
+                  cb.addQuadruples(exprArit.getIntermediateCode());
+                  expresion.setIntermediateCode(cb.create());
+                  expresion.setTemporal(exprArit.getTemporal());
+
+                  RESULT = expresion;
+                :}
+                | exprLogica:exprLogica
+                {:
+                  Expresion expresion = new Expresion(exprLogica);
+                
+                  //Código intermedio
+                  TemporalFactoryIF tf = new TemporalFactory(getCurrentScope());
+                  IntermediateCodeBuilderIF cb = new IntermediateCodeBuilder(getCurrentScope());
+                  cb.addQuadruples(exprLogica.getIntermediateCode());
+                  expresion.setIntermediateCode(cb.create());
+                  expresion.setTemporal(exprLogica.getTemporal());
+
+                  RESULT = expresion;
+                :}
+                | PARENIZQ expresion:expresion PARENDER
+                {:
+                 expresion.addExpresion(expresion);
+                 RESULT = expresion;
+                :}
+                | variables:variables
+                {:
+
+                  Expresion expresion = new Expresion(variables);
+
+                  //Código intermedio
+                  TemporalFactoryIF tf = new TemporalFactory(getCurrentScope());
+                  IntermediateCodeBuilderIF cb = new IntermediateCodeBuilder(getCurrentScope());
+                  cb.addQuadruples(variables.getIntermediateCode());
+                  expresion.setIntermediateCode(cb.create());
+                  expresion.setTemporal(variables.getTemporal());
+
+                 RESULT = expresion;
+                :};
+
+exprArit      ::= expresion:expresionl MINUS expresion:expresionr
+                {:
+                  ExpArit expArit = new ExpArit(expresionl, "-", expresionr);
+                  //Código intermedio
+                  TemporalFactoryIF tf = new TemporalFactory(getCurrentScope());
+                  IntermediateCodeBuilderIF cb = new IntermediateCodeBuilder(getCurrentScope());
+                  TemporalIF temp1 = expresionl.getTemporal();
+                  TemporalIF temp2 = expresionr.getTemporal();
+                  TemporalIF temp = tf.create();
+                  cb.addQuadruples(expresionl.getIntermediateCode());
+                  cb.addQuadruples(expresionr.getIntermediateCode());
+                  cb.addQuadruple("SUB",temp,temp1,temp2);
+                  expArit.setTemporal(temp);
+                  expArit.setIntermediateCode(cb.create());
+                  RESULT = expArit;
+                :}
+                | expresion:expresionl PRODUCTO expresion:expresionr
+                {:
+                  ExpArit expArit = new ExpArit(expresionl, "*", expresionr);
+
+                   //Código intermedio
+                  TemporalFactoryIF tf = new TemporalFactory(getCurrentScope());
+                  IntermediateCodeBuilderIF cb = new IntermediateCodeBuilder(getCurrentScope());
+                  TemporalIF temp1 = expresionl.getTemporal();
+                  TemporalIF temp2 = expresionr.getTemporal();
+                  TemporalIF temp = tf.create();
+                  cb.addQuadruples(expresionl.getIntermediateCode());
+                  cb.addQuadruples(expresionr.getIntermediateCode());
+                  cb.addQuadruple("MULT", temp, temp1, temp2);
+                  expArit.setTemporal(temp);
+                  expArit.setIntermediateCode(cb.create());
+                  RESULT = expArit;
+                :}
+                | ENTERO:ENTERO
+                {:
+                  ExpArit expArit = new ExpArit(Integer.parseInt(ENTERO.getLexema()));
+
+                  //Código intermedio
+                  TemporalFactory tf = new TemporalFactory(getCurrentScope());
+                  IntermediateCodeBuilder cb = new IntermediateCodeBuilder(getCurrentScope());
+                  TemporalIF temp = tf.create();
+                  cb.addQuadruple("MV", temp, Integer.parseInt(ENTERO.getLexema()));
+                  expArit.setTemporal(temp);
+                  expArit.setIntermediateCode(cb.create());
+
+                  RESULT = expArit;
+                :};
+
+exprLogica    ::= expresion:expresionl MAYOR expresion:expresionr
+                {:
+                    ExprLogica expLogica = new ExprLogica(expresionl, ">", expresionr);
+                  
+                    //Código intermedio
+                  	TemporalFactoryIF tf = new TemporalFactory(getCurrentScope());
+                    IntermediateCodeBuilderIF cb = new IntermediateCodeBuilder(getCurrentScope());
+                    TemporalIF temp1 = expresionl.getTemporal();
+                    TemporalIF temp2 = expresionr.getTemporal();
+                    TemporalIF temp = tf.create();
+                    cb.addQuadruples(expresionl.getIntermediateCode());
+                    cb.addQuadruples(expresionr.getIntermediateCode());
+                    cb.addQuadruple("GR",temp,temp1,temp2);
+                    expLogica.setTemporal(temp);
+                    expLogica.setIntermediateCode(cb.create());
+                                
+                    RESULT = expLogica;
+
+                :}
+                | expresion:expresionl IGUAL expresion:expresionr
+                {:
+                  ExprLogica expLogica = new ExprLogica(expresionl, "=", expresionr);
+
+                   //Código intermedio
+                  TemporalFactoryIF tf = new TemporalFactory(getCurrentScope());
+                  IntermediateCodeBuilderIF cb = new IntermediateCodeBuilder(getCurrentScope());
+                  TemporalIF temp1 = expresionl.getTemporal();
+                  TemporalIF temp2 = expresionr.getTemporal();
+                  TemporalIF temp = tf.create();
+                  cb.addQuadruples(expresionl.getIntermediateCode());
+                  cb.addQuadruples(expresionr.getIntermediateCode());
+                  cb.addQuadruple("EQ",temp,temp1,temp2);
+                  expLogica.setTemporal(temp);
+                  expLogica.setIntermediateCode(cb.create());
+                  
+                  RESULT = expLogica;
+                :}
+                | expresion:expresionl OR expresion:expresionr
+                 {:
+                  ExprLogica expLogica = new ExprLogica(expresionl, "OR", expresionr);
+                 
+                  ScopeIF scope = scopeManager.getCurrentScope();
+                  IntermediateCodeBuilderIF cb = new IntermediateCodeBuilder(getCurrentScope());
+                  TemporalFactoryIF tf = new TemporalFactory(getCurrentScope());
+                  LabelFactoryIF lf = new LabelFactory();
+                  TemporalIF e1Temp = expresionl.getTemporal();
+                  TemporalIF e2Temp = expresionr.getTemporal();
+                  TemporalIF temp = tf.create();
+                  LabelIF l1 = lf.create();
+                  LabelIF l2 = lf.create();
+                  LabelIF l3 = lf.create();
+                  cb.addQuadruples(expresionl.getIntermediateCode());
+                  cb.addQuadruple("BRF",e1Temp,l1);
+                  cb.addQuadruple("MV",temp, new Value(1));
+                  cb.addQuadruple("BR",l3);
+                  cb.addQuadruple("INL",l1);
+                  cb.addQuadruples(expresionr.getIntermediateCode());
+                  cb.addQuadruple("BRF",e2Temp,l2);
+                  cb.addQuadruple("MV",temp,new Value(1));
+                  cb.addQuadruple("BR",l3);
+                  cb.addQuadruple("INL",l2);
+                  cb.addQuadruple("MV",temp,new Value(0));
+                  cb.addQuadruple("INL",l3);
+                  expLogica.setTemporal(temp);
+                  expLogica.setIntermediateCode(cb.create());
+
+                  RESULT = expLogica;
+                :}
+                | NOT expresion:expresionl
+                {:
+                
+                  ExprLogica expLogica = new ExprLogica(expresionl, "NOT");
+
+                  //Ćdigo intermedio
+                  TemporalFactoryIF tf = new TemporalFactory(getCurrentScope());
+                  IntermediateCodeBuilderIF cb = new IntermediateCodeBuilder(getCurrentScope());
+                  TemporalIF temp1 = expresionl.getTemporal();
+                  TemporalIF temp = tf.create();
+                  cb.addQuadruples(expresionl.getIntermediateCode());
+                  cb.addQuadruple("NOT", temp, temp1);
+                  expLogica.setTemporal(temp);
+                  expLogica.setIntermediateCode(cb.create());
+
+                  RESULT = expLogica;
+                :}
+                | vBooleano:vBooleano
+                 {:
+                    ExprLogica expLogica = new ExprLogica(vBooleano);
+                  
+                    //Código intermedio
+                  	TemporalFactoryIF tf = new TemporalFactory(getCurrentScope());
+                    IntermediateCodeBuilderIF cb = new IntermediateCodeBuilder(getCurrentScope());
+                    TemporalIF temp = tf.create();
+                    cb.addQuadruple("MV", temp, Boolean.compare(vBooleano.getValue(), false));
+                    expLogica.setTemporal(temp);
+                    expLogica.setIntermediateCode(cb.create());
+
+                   RESULT = expLogica;
+                :};
+
+sentencias    ::= listSentencia:listSentencia PUNTOYCOMA
+                {:
+
+                   Sentencias sentencias = new Sentencias(listSentencia);
+
+                   //Código intermedio
+                   TemporalFactoryIF tf = new TemporalFactory(getCurrentScope());
+                   IntermediateCodeBuilderIF cb = new IntermediateCodeBuilder(getCurrentScope());
+                   cb.addQuadruples(listSentencia.getIntermediateCode());
+                   sentencias.setIntermediateCode(cb.create());
+
+                   RESULT = sentencias;
+                :}
+                | listSentencia:listSentencia
+                {:
+
+                   Sentencias sentencias = new Sentencias(listSentencia);
+                   //Código intermedio
+                   TemporalFactoryIF tf = new TemporalFactory(getCurrentScope());
+                   IntermediateCodeBuilderIF cb = new IntermediateCodeBuilder(getCurrentScope());
+                   cb.addQuadruples(listSentencia.getIntermediateCode());
+                   sentencias.setIntermediateCode(cb.create());
+
+                   RESULT = sentencias;
+                :}
+                |
+                {:
+                  RESULT = new Sentencias();
+                :};
+
+listSentencia ::= listSentencia:listSentencia PUNTOYCOMA sentencia:sentencia
+                {:
+                    TemporalFactoryIF tf = new TemporalFactory(getCurrentScope());
+                    IntermediateCodeBuilderIF cb = new IntermediateCodeBuilder(getCurrentScope());
+                    listSentencia.addSentencia(sentencia);
+                    cb.addQuadruples(listSentencia.getIntermediateCode());
+                    listSentencia.setIntermediateCode(cb.create());
+
+                    RESULT = listSentencia;
+                :}
+                | sentencia:sentencia
+                {:
+                   ListSentencia listSentencia = new ListSentencia(sentencia);
+
+                   //Código intermedio
+                   TemporalFactoryIF tf = new TemporalFactory(getCurrentScope());
+                   IntermediateCodeBuilderIF cb = new IntermediateCodeBuilder(getCurrentScope());
+                   cb.addQuadruples(sentencia.getIntermediateCode());
+                   listSentencia.setIntermediateCode(cb.create());
+
+                   RESULT = listSentencia;
+                :};
+
+sentencia     ::= sentAsign:sentAsign
+                 {:
+                   Sentencia sentencia = new Sentencia(sentAsign);
+
+                    //Código intermedio
+                   TemporalFactoryIF tf = new TemporalFactory(getCurrentScope());
+                   IntermediateCodeBuilderIF cb = new IntermediateCodeBuilder(getCurrentScope());
+                   cb.addQuadruples(sentAsign.getIntermediateCode());
+                   sentencia.setIntermediateCode(cb.create());
+
+                   RESULT = sentencia;
+                 :}
+                | sentIf:sentIf
+                {:
+                   Sentencia sentencia = new Sentencia(sentIf);
+
+                   //Código intermedio
+                   TemporalFactoryIF tf = new TemporalFactory(getCurrentScope());
+                   IntermediateCodeBuilderIF cb = new IntermediateCodeBuilder(getCurrentScope());
+                   cb.addQuadruples(sentIf.getIntermediateCode());
+                   sentencia.setIntermediateCode(cb.create());
+
+                  RESULT = sentencia;
+                :}
+                | sentFor:sentFor
+                {:
+                  Sentencia sentencia = new Sentencia(sentFor);
+
+                  //Código intermedio
+                   TemporalFactoryIF tf = new TemporalFactory(getCurrentScope());
+                   IntermediateCodeBuilderIF cb = new IntermediateCodeBuilder(getCurrentScope());
+                   cb.addQuadruples(sentFor.getIntermediateCode());
+                   sentencia.setIntermediateCode(cb.create());
+
+                  RESULT = sentencia;
+                :}
+                | sentReturn:sentReturn
+                {:
+                  Sentencia sentencia = new Sentencia(sentReturn);
+
+                  //Código intermedio
+                   TemporalFactoryIF tf = new TemporalFactory(getCurrentScope());
+                   IntermediateCodeBuilderIF cb = new IntermediateCodeBuilder(getCurrentScope());
+                   cb.addQuadruples(sentReturn.getIntermediateCode());
+                   sentencia.setIntermediateCode(cb.create());
+
+                  RESULT = sentencia;
+                :}
+                | sWriteString:sWriteString
+                {:
+                   Sentencia sentencia = new Sentencia(sWriteString);
+
+                   //Código intermedio
+                   TemporalFactoryIF tf = new TemporalFactory(getCurrentScope());
+                   IntermediateCodeBuilderIF cb = new IntermediateCodeBuilder(getCurrentScope());
+                   cb.addQuadruples(sWriteString.getIntermediateCode());
+                   sentencia.setIntermediateCode(cb.create());
+
+                  RESULT = sentencia;
+                :}
+                | sWriteInt:sWriteInt
+                {:
+                  Sentencia sentencia = new Sentencia(sWriteInt);
+
+                  //Código intermedio
+                   TemporalFactoryIF tf = new TemporalFactory(getCurrentScope());
+                   IntermediateCodeBuilderIF cb = new IntermediateCodeBuilder(getCurrentScope());
+                   cb.addQuadruples(sWriteInt.getIntermediateCode());
+                   sentencia.setIntermediateCode(cb.create());
+
+                  RESULT = sentencia;
+                :}
+                | sWriteLn:sWriteLn
+                {:
+                  Sentencia sentencia = new Sentencia(sWriteLn);
+
+                  //Código intermedio
+                   TemporalFactoryIF tf = new TemporalFactory(getCurrentScope());
+                   IntermediateCodeBuilderIF cb = new IntermediateCodeBuilder(getCurrentScope());
+                   cb.addQuadruples(sWriteLn.getIntermediateCode());
+                   sentencia.setIntermediateCode(cb.create());
+
+                  RESULT = sentencia;
+                :}
+                | sentProcedure:sentProcedure
+                {:
+                   Sentencia sentencia = new Sentencia(sentProcedure);
+
+                  //Código intermedio
+                   TemporalFactoryIF tf = new TemporalFactory(getCurrentScope());
+                   IntermediateCodeBuilderIF cb = new IntermediateCodeBuilder(getCurrentScope());
+                   cb.addQuadruples(sentProcedure.getIntermediateCode());
+                   sentencia.setIntermediateCode(cb.create());
+
+                  RESULT = sentencia;              
+                :};
+
+sentReturn     ::= RETURN expresion:expresion
+                {:
+
+                    SentReturn sentReturn = new SentReturn(expresion);
+
+                    // Generación de código intermedio
+                    IntermediateCodeBuilderIF cb = new IntermediateCodeBuilder(getCurrentScope());
+                    TemporalFactoryIF tf = new TemporalFactory(getCurrentScope());
+                    LabelFactoryIF lf = new LabelFactory();
+                    TemporalIF temp = tf.create();
+                    LabelIF l1 = lf.create("F" + getCurrentScope().getName());
+                    cb.addQuadruples(expresion.getIntermediateCode());
+                    cb.addQuadruple("RETURN",l1, temp);
+                    sentReturn.setIntermediateCode(cb.create());
+                    RESULT = sentReturn;
+                :};
+
+sentAsign     ::= variables:variables DOSPUNTOSIGUAL expresion:expresion
+                {:
+
+                  SentAsign sentAsign = new SentAsign(variables, expresion);
+                  SymbolIF symbol = getSymbol(variables.getIdentificador());
+
+                  if (symbol instanceof SymbolConstant) {
+                     semanticErrorManager.semanticFatalError(variables.getIdentificador() +" es una constante, no se puede reasignar el valor");
+                  }
+
+                   IntermediateCodeBuilder cb = new IntermediateCodeBuilder(getCurrentScope()); 
+                   TemporalFactoryIF tf = new TemporalFactory(getCurrentScope());
+                   TemporalIF tempExp = expresion.getTemporal();
+                   TemporalIF temp = tf.create();
+                  if (symbol instanceof TypeFunction) {
+                      cb.addQuadruples(expresion.getIntermediateCode());
+                      cb.addQuadruple("MV", temp, tempExp);
+                      cb.addQuadruple("MV", variables.getVariable(), temp);
+                  } else {
+                      cb.addQuadruples(expresion.getIntermediateCode());
+                      cb.addQuadruples(variables.getIntermediateCode());   	
+                      cb.addQuadruple("MV", temp, tempExp);
+                      cb.addQuadruple("MV", variables.getVariable(), temp);
+                  }
+                   sentAsign.setIntermediateCode(cb.create());
+                  RESULT = sentAsign;
+                :};
+                      
+sentIf        ::= IF expresion:expresion THEN sentencias:sentencias sentElse:sentElse END
+                {:
+                  SentIf sentIf = new SentIf(expresion, sentencias, sentElse);
+
+                  //Codigo intermedio
+                  LabelFactory lF = new LabelFactory();
+                  LabelIF l1 = lF.create();
+                  LabelIF l2 = lF.create();
+                  IntermediateCodeBuilder cb= new IntermediateCodeBuilder(getCurrentScope());
+                  cb.addQuadruples(expresion.getIntermediateCode());
+                  cb.addQuadruple("BRF", l1, expresion.getTemporal());
+                  cb.addQuadruples(sentencias.getIntermediateCode());
+                  if (sentElse.getSentencias()!=null){
+                    cb.addQuadruple("BR", l2);
+                  }
+                  cb.addQuadruple("INL", l1);
+                  if(sentElse.getSentencias()!=null){
+                    cb.addQuadruples(sentElse.getIntermediateCode());
+                    cb.addQuadruple("INL", l2);
+                  }
+                  
+                  sentIf.setIntermediateCode(cb.create());
+
+                  RESULT = sentIf;
+                :};
+
+sentElse      ::= ELSE sentencias:sentencias
+                {:
+                   SentElse sentElse = new SentElse(sentencias);
+
+                    //Código intermedio
+                   TemporalFactoryIF tf = new TemporalFactory(getCurrentScope());
+                   IntermediateCodeBuilderIF cb = new IntermediateCodeBuilder(getCurrentScope());
+                   cb.addQuadruples(sentencias.getIntermediateCode());
+                   sentElse.setIntermediateCode(cb.create());
+
+                   RESULT = sentElse;
+                :}
+                |
+                {:
+                   RESULT = new SentElse();
+                :};
+
+sentFor       ::= FOR IDENTIFICADOR:identificador DOSPUNTOSIGUAL expresion:expresionFrom TO expresion:expresionTo DO sentencias:sentencias END
+                {:
+                   SentFor sentFor = new SentFor(identificador.getLexema(), expresionFrom, expresionTo, sentencias);
+
+                  // Generación de código intermedio
+                  IntermediateCodeBuilderIF cb = new IntermediateCodeBuilder(getCurrentScope());
+                  LabelFactoryIF lf = new LabelFactory();
+                  TemporalFactoryIF tf = new TemporalFactory(getCurrentScope());
+                  LabelIF l1 = lf.create();
+                  LabelIF l2 = lf.create();
+
+                  //Código intermedio
+                  //Inicio la variable del bucle
+              
+                  Variable var = new Variable(identificador.getLexema(), getSymbol(identificador.getLexema()).getScope());
+
+                  cb.addQuadruples(expresionFrom.getIntermediateCode());
+                  cb.addQuadruple("MV", var, expresionFrom.getTemporal());
+                  cb.addQuadruple("INL",l1);
+                  cb.addQuadruples(expresionTo.getIntermediateCode());
+                  cb.addQuadruple("INC", expresionTo.getTemporal());
+                  cb.addQuadruple("BRF",l2, var, expresionTo.getTemporal());
+                  cb.addQuadruples(sentencias.getIntermediateCode());
+                  cb.addQuadruple("INC", var);
+                  cb.addQuadruple("BR",l1);
+                  cb.addQuadruple("INL",l2);
+                  sentFor.setIntermediateCode(cb.create());
+                  RESULT = sentFor;
+                :};
+
+sentProcedure ::= IDENTIFICADOR:identificador
+                {:  
+                     //Comprobamos que el procedimiento ya existe en el scope
+                      checkSymbolExists(identificador.getLexema());
+
+                      SentProcedure sentProcedure = new SentProcedure(identificador.getLexema());
+                      SymbolProcedure symbol = (SymbolProcedure) getSymbol(identificador.getLexema());
+
+                      // Generación de código intermedio
+                      ScopeIF scope = scopeManager.getCurrentScope();
+                      IntermediateCodeBuilderIF cb = new IntermediateCodeBuilder(getCurrentScope());
+                      TemporalFactoryIF tf = new TemporalFactory(getCurrentScope());
+                      LabelFactoryIF lf = new LabelFactory();
+                      TemporalIF temp = tf.create();
+                      LabelIF l1 = lf.create(identificador.getLexema());
+
+                      Procedure procedure = new Procedure(identificador.getLexema(), getCurrentScope(), symbol);
+		                  cb.addQuadruple("CALL", procedure, temp);
+                      if (getSymbol(identificador.getLexema()) instanceof SymbolFunction) {
+                        cb.addQuadruple("RETVALUE",temp);
+                      }
+                      sentProcedure.setIntermediateCode(cb.create());
+                      sentProcedure.setTemporal(temp);
+
+                      RESULT = sentProcedure;
+                :}
+                | IDENTIFICADOR:identificador parFuncion:parFuncion
+                {:
+                      
+                      //Comprobamos que el procedimiento ya existe en el scope
+                      checkSymbolExists(identificador.getLexema());
+
+                      SentProcedure sentProcedure = new SentProcedure(identificador.getLexema(), parFuncion);
+
+                      //Comprobamos que los parametros son correctos
+                      //Obtenemos el simbolo en la tabla de simbolos
+                      SymbolProcedure symbol = (SymbolProcedure) getSymbol(identificador.getLexema());
+
+                      int definedParams = 0;
+                      for(ProcParam procParam : symbol.getCabProcedure().getProcParemParam().getProcListParam().getProcListParam()){
+                        definedParams+=procParam.getCadIdVar().getIdentificadores().size();
+                      }
+
+                      if(parFuncion.getParametros()!=null && parFuncion.getParametros().getExpresionList().size()!=definedParams){
+                        semanticErrorManager.semanticFatalError("Numero de parametros de llamada a funcion incorrecto");
+                      }
+
+                      if(symbol.getCabProcedure().getProcParemParam().getProcListParam().getProcListParam()!=null) {
+                          for(int i=0;i<symbol.getCabProcedure().getProcParemParam().getProcListParam().getProcListParam().size();i++) {
+                            //Comprobamos en base a la definicion
+                            ProcParam procParam = symbol.getCabProcedure().getProcParemParam().getProcListParam().getProcListParam().get(i);
+                            CadIdVar cadIdVar = procParam.getCadIdVar();
+                            TipoVar tipoVar   = procParam.getTipoVar();
+
+                            for(int j=0;j<cadIdVar.getIdentificadores().size();j++){
+                                checkTypesAreSame(getType(tipoVar.getIdentificadorTipo()), getExpresionTypeResult(parFuncion.getParametros().getExpresionList().get(j)));
+                            }
+                        }
+                      }
+
+                      // Generación de código intermedio
+                      ScopeIF scope = scopeManager.getCurrentScope();
+                      IntermediateCodeBuilderIF cb = new IntermediateCodeBuilder(getCurrentScope());
+                      TemporalFactoryIF tf = new TemporalFactory(getCurrentScope());
+                      LabelFactoryIF lf = new LabelFactory();
+                      TemporalIF temp = tf.create();
+                      LabelIF l1 = lf.create(identificador.getLexema());
+                      sentProcedure.setTemporal(temp);
+
+                      Procedure procedure = new Procedure(identificador.getLexema(), getCurrentScope(), symbol);
+
+                      //Codigo de los parametros
+		                  cb.addQuadruples(parFuncion.getIntermediateCode());
+
+                      cb.addQuadruple("CALL", procedure, temp);
+                      cb.addQuadruple("RETURNVALUE",temp);
+
+                      sentProcedure.setIntermediateCode(cb.create());
+                      sentProcedure.setTemporal(temp);
+
+                     RESULT = sentProcedure;
+                :};
+                  
+// Parametros de llamada a función
+parFuncion    ::= PARENIZQ parametros:parametros PARENDER
+                {:
+                   ParFuncion parFuncion = new ParFuncion(parametros);
+
+                    //Código intermedio  
+                   TemporalFactoryIF tf = new TemporalFactory(getCurrentScope());
+                   IntermediateCodeBuilderIF cb = new IntermediateCodeBuilder(getCurrentScope());
+		               cb.addQuadruple("STARTRA");
+                   cb.addQuadruples(parametros.getIntermediateCode());
+                   parFuncion.setIntermediateCode(cb.create());
+
+                   RESULT = parFuncion;
+                :}
+                | PARENIZQ PARENDER
+                {:
+                   RESULT = new ParFuncion();
+                :};
+
+parametros    ::= parametros:parametros COMA expresion:expresion
+                {:
+                    parametros.addExpresion(expresion);
+
+                    // Generación de código intermedio
+                    IntermediateCodeBuilderIF cb = new IntermediateCodeBuilder(getCurrentScope());
+                    TemporalIF temp = expresion.getTemporal();
+                    cb.addQuadruples(expresion.getIntermediateCode());
+                    cb.addQuadruples(parametros.getIntermediateCode());
+                    cb.addQuadruple("PARAM", temp);
+                    parametros.setIntermediateCode(cb.create());
+
+                    RESULT = parametros;
+                :}
+                | expresion:expresion
+                {:
+
+                  Parametros parametros = new Parametros(expresion);
+
+                  IntermediateCodeBuilderIF cb = new IntermediateCodeBuilder(getCurrentScope());
+                  TemporalIF temp = expresion.getTemporal();
+                  cb.addQuadruples(expresion.getIntermediateCode());
+                  cb.addQuadruple("PARAM", temp);
+                  parametros.setIntermediateCode(cb.create());
+
+                  RESULT = parametros;
+                :};
+
+sWriteString  ::= WRITESTRING PARENIZQ STRING:string PARENDER
+                {:
+                SWriteString sWriteString = new SWriteString(string.getLexema());
+
+                //Generacion de Codigo Intermedio
+                TemporalFactory tF = new TemporalFactory(getCurrentScope());
+                IntermediateCodeBuilder cb = new IntermediateCodeBuilder(getCurrentScope());
+                LabelFactory lF = new LabelFactory();
+                LabelIF lb = lF.create();
+                TemporalIF temp = tF.create();
+                cb.addQuadruple("WRITESTRING", null, new Value(string.getLexema()));
+                sWriteString.setIntermediateCode(cb.create());
+
+                 RESULT = sWriteString;
+                :};
+
+sWriteInt     ::= WRITEINT PARENIZQ expresion:expresion PARENDER
+                {:
+                    SWriteInt sWriteInt = new SWriteInt(expresion);
+
+                    IntermediateCodeBuilderIF cb = new IntermediateCodeBuilder(getCurrentScope());
+                    TemporalIF eTemp = expresion.getTemporal();
+                    cb.addQuadruples(expresion.getIntermediateCode());
+                    cb.addQuadruple("WRITEINT", eTemp);
+                    sWriteInt.setIntermediateCode(cb.create());
+
+                    RESULT = sWriteInt;
+                :};
+
+sWriteLn      ::= WRITELN
+                {:
+                    SWriteLn sWriteLn = new SWriteLn();
+
+                    //Generacion de Codigo Intermedio
+                    TemporalFactory tF = new TemporalFactory(getCurrentScope());
+                    IntermediateCodeBuilder cb = new IntermediateCodeBuilder(getCurrentScope());
+                    LabelFactory lF = new LabelFactory();
+                    LabelIF lb = lF.create();
+                    TemporalIF temp = tF.create();
+                    cb.addQuadruple("WRITELN", temp, lb);
+                    sWriteLn.setIntermediateCode(cb.create());
+
+                    RESULT = sWriteLn;
+
+                :};
+
+variables     ::= IDENTIFICADOR:identificador
+                  {:
+                    ScopeIF scope = scopeManager.getCurrentScope();
+                    SymbolTableIF symbolTable = scope.getSymbolTable();
+                    checkSymbolExists(identificador.getLexema());
+
+                    Variables variables = new Variables(identificador.getLexema());
+
+                    //Código intermedio
+                    TemporalFactory tf = new TemporalFactory(getCurrentScope()); 
+                    IntermediateCodeBuilder cb = new IntermediateCodeBuilder(getCurrentScope()); 
+                    TemporalIF temp = tf.create();
+                    SymbolIF symbol = scopeManager.searchSymbol(identificador.getLexema());
+
+                    if (symbol instanceof SymbolVariable) {
+                      Variable variable = new Variable(identificador.getLexema(), symbol.getScope());
+                      SymbolProcedure enclosingSymbol = (SymbolProcedure) scopeManager.searchSymbol(scope.getName());
+                      variable.setEnclosingSymbol(enclosingSymbol);
+                      cb.addQuadruple("MVA", temp, variable);   
+                      variables.setVariable(variable);
+                    } else if (symbol instanceof SymbolParameter) { 
+                      OperandIF  o = new Variable(identificador.getLexema(), symbol);     
+                      SymbolProcedure enclosingSymbol = (SymbolProcedure) scopeManager.searchSymbol(scope.getName());
+                      ((Variable) o).setEnclosingSymbol(enclosingSymbol);
+                      ((Variable) o).setParameter(true);      
+                      variables.setVariable((Variable)o);
+                      cb.addQuadruple("MVA", temp, o);   
+                    } else {
+                        SymbolConstant constant = (SymbolConstant) symbol;
+                        OperandIF o = new Value(constant.getValue());
+                        cb.addQuadruple("MV", temp, o); 
+                    }
+
+                    variables.setTemporal(temp);
+                    variables.setIntermediateCode(cb.create());
+
+                    RESULT = variables;
+                  :}
+                | IDENTIFICADOR:identificador idArray:idArray
+                  {:
+                    Variables variables = new Variables(identificador.getLexema(), idArray);
+                    if(idArray.getExpresion().getExpArit()!=null) {
+                          if(idArray.getExpresion().getExpArit().getValue()!=null){
+                            SymbolVariable symbolVariable = (SymbolVariable) getSymbol(identificador.getLexema());
+                            TypeIF type = symbolVariable.getType();
+                            if (type instanceof TypeArray) {
+                                TypeArray typeArray = (TypeArray) type;
+                              if (idArray.getExpresion().getExpArit().getValue() > typeArray.getExpTipo().getRigth().getValue()){
+                                  semanticErrorManager.semanticFatalError("Posicion de array fuera de rango");
+                              }
+                          }
+                      }
+                    }
+
+                    if (idArray.getExpresion().getVariables()!= null && idArray.getExpresion().getVariables()!=null){
+                        String identificadorVariableIdArray = idArray.getExpresion().getVariables().getIdentificador();
+                        SymbolVariable symbolVariableIdArray = (SymbolVariable) getSymbol(identificadorVariableIdArray);
+                        
+                        if (!symbolVariableIdArray.getType().getName().equals("int") && !symbolVariableIdArray.getType().getName().equals("TVector")) {
+                          semanticErrorManager.semanticFatalError("Acceso a posicion de array con variable no entera");
+                        }
+                    }
+
+                    //Código intermedio
+                    ScopeIF scope = scopeManager.getCurrentScope();
+                    TemporalFactory tF = new TemporalFactory(getCurrentScope());
+                    IntermediateCodeBuilder cb = new IntermediateCodeBuilder(getCurrentScope());
+                    SymbolIF symbol = scopeManager.searchSymbol(identificador.getLexema());
+
+                    TemporalIF temp = tF.create();
+                    TemporalIF temp1 = tF.create();
+                    TemporalIF temp2 = tF.create();
+                    TemporalIF temp3 = tF.create();
+
+                    if (symbol instanceof SymbolVariable) {
+                      Variable variable = new Variable(identificador.getLexema(), symbol.getScope());
+                      SymbolProcedure enclosingSymbol = (SymbolProcedure) scopeManager.searchSymbol(scope.getName());
+                      variable.setEnclosingSymbol(enclosingSymbol);
+                      cb.addQuadruple("MVA", temp, variable);   
+                      variables.setVariable(variable);
+                    } else if (symbol instanceof SymbolParameter) { 
+                      OperandIF  o = new Variable(identificador.getLexema(), symbol);     
+                      SymbolProcedure enclosingSymbol = (SymbolProcedure) scopeManager.searchSymbol(scope.getName());
+                      ((Variable) o).setEnclosingSymbol(enclosingSymbol);
+                      ((Variable) o).setParameter(true);      
+                      variables.setVariable((Variable)o);
+                      cb.addQuadruple("MVA", temp, o);   
+                    } else {
+                        SymbolConstant constant = (SymbolConstant) symbol;
+                        OperandIF o = new Value(constant.getValue());
+                        cb.addQuadruple("MV", temp, o);
+                    }
+                    
+                    TemporalIF tempPosicion = idArray.getExpresion().getTemporal();
+                    cb.addQuadruple("MV", temp2, tempPosicion);
+                    cb.addQuadruple("ADD", temp3, temp1, temp2);
+                    cb.addQuadruple("MVP", temp, temp3);
+
+                    variables.setTemporal(temp); 
+                    variables.setIntermediateCode(cb.create());
+
+                    RESULT = variables;
+                  :}
+                | IDENTIFICADOR:identificador parFuncion:parFuncion
+                 {:
+                     //Comprobamos que el procedimiento ya existe en el scope
+                      checkSymbolExists(identificador.getLexema());
+
+                      Variables variables = new Variables(identificador.getLexema(), parFuncion);
+
+                      //Comprobamos que los parametros son correctos
+                      //Obtenemos el simbolo en la tabla de simbolos
+                      SymbolProcedure symbol = (SymbolProcedure) getSymbol(identificador.getLexema());
+
+                      int definedParams = 0;
+                      for(ProcParam procParam : symbol.getCabProcedure().getProcParemParam().getProcListParam().getProcListParam()){
+                        definedParams+=procParam.getCadIdVar().getIdentificadores().size();
+                      }
+
+                      if(parFuncion.getParametros()!=null && parFuncion.getParametros().getExpresionList().size()!=definedParams){
+                        semanticErrorManager.semanticFatalError("Numero de parametros de llamada a funcion incorrecto");
+                      }
+
+
+                      if(symbol.getCabProcedure().getProcParemParam().getProcListParam().getProcListParam()!=null){
+                          for(int i=0;i<symbol.getCabProcedure().getProcParemParam().getProcListParam().getProcListParam().size();i++) {
+                            //Comprobamos en base a la definicion
+                            ProcParam procParam = symbol.getCabProcedure().getProcParemParam().getProcListParam().getProcListParam().get(i);
+                            CadIdVar cadIdVar = procParam.getCadIdVar();
+                            TipoVar tipoVar   = procParam.getTipoVar();
+                            if(cadIdVar!=null && cadIdVar.getIdentificadores()!=null){
+                              for(int j=0;j<cadIdVar.getIdentificadores().size();j++){
+                                  checkTypesAreSame(getType(tipoVar.getIdentificadorTipo()), getExpresionTypeResult(parFuncion.getParametros().getExpresionList().get(j)));
+                              }
+                            }
+                        }
+                      }
+
+                       // Generación de código intermedio
+                      ScopeIF scope = scopeManager.getCurrentScope();
+                      IntermediateCodeBuilderIF cb = new IntermediateCodeBuilder(getCurrentScope());
+                      TemporalFactoryIF tf = new TemporalFactory(getCurrentScope());
+                      LabelFactoryIF lf = new LabelFactory();
+                      TemporalIF temp = tf.create();
+                      LabelIF l1 = lf.create(identificador.getLexema());
+
+                      Procedure procedure = new Procedure(identificador.getLexema(), getCurrentScope(), symbol);
+  
+                      //Codigo de los parametros
+		                  cb.addQuadruples(parFuncion.getIntermediateCode());
+                      cb.addQuadruple("CALL", procedure, temp);
+
+                      if(getSymbol(identificador.getLexema()) instanceof SymbolFunction) {
+                        cb.addQuadruple("RETVALUE",temp);
+                      }
+
+                      variables.setIntermediateCode(cb.create());
+                      variables.setTemporal(temp);
+
+                    RESULT = variables;
+                 :};
+
+idArray       ::= CORCHIZQ expresion:expresion CORCHDER
+                  {:
+                    RESULT = new IdArray(expresion);
+                  :};
+
+intOBool      ::= INTEGER     
+                  {:
+                    RESULT =  new IntOBool("INTEGER");
+                  :} 
+                | BOOLEAN
+                  {:
+                    RESULT =  new IntOBool("BOOL");
+                  :};
+
+entOid        ::= ENTERO:entero
+                  {:
+                    RESULT = new EntOId(Integer.parseInt(entero.getLexema()));
+                  :}
+                | IDENTIFICADOR:identificador
+                  {:
+                    RESULT = new EntOId(identificador.getLexema());
+                  :};
+
+vBooleano     ::= TRUE
+                  {:
+                   RESULT = new VBooleano(true);
+                  :}
+                  | FALSE
+                  {:
+                   RESULT = new VBooleano(false);
+                  :};
